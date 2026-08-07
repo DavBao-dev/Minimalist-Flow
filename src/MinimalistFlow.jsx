@@ -28,6 +28,7 @@ import {
   Trophy,
   Save,
   RotateCcw,
+  Library,
 } from "lucide-react";
 
 // ---------------------------------------------------------------------------
@@ -123,10 +124,13 @@ const MOCK_TASKS = [
 
   // Study / research examples
   base({ id: uid(), title: "Read up on vector databases", matrix: "Q2", estimate: 3, horizon: "Week", status: "This Week", category: "STUDY-RESEARCH",
-    materials: [
-      { id: uid(), title: "Vector DB comparison sheet", url: "https://docs.google.com/spreadsheets/d/example-vector-db" },
-      { id: uid(), title: "pgvector docs", url: "https://github.com/pgvector/pgvector" },
-    ] }),
+      materials: [
+        {
+          id: uid(),
+          title: "Project Spec",
+          url: "https://docs.google.com/..."
+        }
+      ]}),
   base({ id: uid(), title: "Competitor pricing research", matrix: "Q2", estimate: 2, horizon: "Week", status: "This Week", category: "STUDY-RESEARCH",
     materials: [{ id: uid(), title: "Pricing research sheet", url: "https://docs.google.com/spreadsheets/d/example-pricing" }] }),
 
@@ -167,9 +171,22 @@ const DEFAULT_DATA = {
 const loadData = () => {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : DEFAULT_DATA;
+
+    if (!raw) return DEFAULT_DATA;
+
+    const data = JSON.parse(raw);
+
+    return {
+      tasks: data.tasks || MOCK_TASKS,
+      freeBlocks: data.freeBlocks || MOCK_FREE_BLOCKS,
+      materials: data.materials || [],
+    };
   } catch {
-    return DEFAULT_DATA;
+    return {
+      tasks: MOCK_TASKS,
+      freeBlocks: MOCK_FREE_BLOCKS,
+      materials: [],
+    };
   }
 };
 
@@ -483,7 +500,7 @@ function CapacityGauge({ capacity, scheduled, onCapacityChange }) {
 
 function BoardView({ tasks, setTasks }) {
   const [dragId, setDragId] = useState(null);
-  const [capacity, setCapacity] = useState(20);
+  const [capacity, setCapacity] = useState(80);
 
   const scheduled = useMemo(
     () =>
@@ -877,6 +894,95 @@ function TaskView({ tasks, setTasks }) {
   );
 }
 
+
+function MaterialView({
+    tasks,
+    materials,
+    setMaterials,
+}) {
+  
+  const [title, setTitle] = useState("");
+  const [url, setUrl] = useState("");
+  function importMaterial() {
+    if (!title.trim() || !url.trim()) return;
+
+    setMaterials(prev => [
+      ...prev,
+      {
+        id: uid(),
+        title,
+        url,
+        category: "Imported",
+      },
+    ]);
+
+    setTitle("");
+    setUrl("");
+  }
+
+  return (
+    <>
+      <div className="flex gap-2 mb-4">
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="Title: Project Spec"
+          className="rounded-lg bg-zinc-900 border border-zinc-700 px-3 py-2"
+        />
+
+        <input
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          placeholder="https://docs.google.com/..."
+          className="flex-1 rounded-lg bg-zinc-900 border border-zinc-700 px-3 py-2"
+        />
+
+        <button
+          onClick={importMaterial}
+          className="px-4 rounded-lg bg-blue-600 hover:bg-blue-500"
+        >
+          Import
+        </button>
+      </div>
+
+      <div className="grid grid-cols-3 gap-4">
+        {materials.map(mat => (
+          <div
+            key={mat.id}
+            className="rounded-xl border border-zinc-800 p-4"
+          >
+            <div className="text-sm text-zinc-400">
+              {mat.category}
+            </div>
+
+            <div className="font-medium">
+              {mat.title}
+            </div>
+
+            <a
+              href={mat.url}
+              target="_blank"
+              rel="noreferrer"
+              className="text-blue-400 text-sm"
+            >
+              Open
+            </a>
+
+            <button
+              onClick={() =>
+                setMaterials(prev => prev.filter(x => x.id !== mat.id))
+              }
+              className="ml-3 text-red-400 text-sm"
+            >
+              Delete
+            </button>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Focus Day view — list the real gaps in today's calendar, then drag
 // "Today" tasks into the block they actually fit. Overbooked blocks glow red,
@@ -1090,6 +1196,63 @@ function FocusDayView({ tasks, setTasks, freeBlocks, setFreeBlocks }) {
   );
 }
 
+function StatisticsView({ tasks }) {
+  const stats = DAYS.map((day) => ({
+    day,
+    count: tasks.filter(
+      (t) => t.status === "Done" && t.completedDay === day
+    ).length,
+  }));
+
+  const max = Math.max(...stats.map((s) => s.count), 0);
+
+  return (
+    <div className="flex flex-col gap-6">
+      <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
+        <h2 className="text-lg font-semibold text-zinc-100 mb-1">
+          Hiệu quả công việc
+        </h2>
+        <p className="text-sm text-zinc-500">
+          Số lượng task hoàn thành theo từng ngày trong tuần.
+        </p>
+      </div>
+
+      <div className="space-y-3">
+        {stats.map((s) => (
+          <div
+            key={s.day}
+            className={`rounded-lg border p-3 ${
+              s.count === max && max > 0
+                ? "border-emerald-500/40 bg-emerald-500/10"
+                : "border-zinc-800 bg-zinc-900/40"
+            }`}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <span className="font-medium text-zinc-200">
+                {DAY_FULL[s.day]}
+              </span>
+
+              <span className="font-['JetBrains_Mono'] text-zinc-400">
+                {s.count} task{s.count !== 1 ? "s" : ""}
+                {s.count === max && max > 0 && " 🏆"}
+              </span>
+            </div>
+
+            <div className="w-full h-2 bg-zinc-800 rounded">
+              <div
+                className="h-2 rounded bg-emerald-400"
+                style={{
+                  width: `${max === 0 ? 0 : (s.count / max) * 100}%`,
+                }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Root app
 // ---------------------------------------------------------------------------
@@ -1097,6 +1260,7 @@ export default function MinimalistFlow() {
   const initial = loadData();
   const [tasks, setTasks] = useState(initial.tasks);
   const [freeBlocks, setFreeBlocks] = useState(initial.freeBlocks);
+  const [materials, setMaterials] = useState(initial.materials || []);
   const [view, setView] = useState("board");
   const saveData = () => {
     localStorage.setItem(
@@ -1104,26 +1268,29 @@ export default function MinimalistFlow() {
       JSON.stringify({
         tasks,
         freeBlocks,
+        materials,
       })
     );
   };
 
   useEffect(() => {
     saveData();
-  }, [tasks, freeBlocks]);
+  }, [tasks, freeBlocks, materials]);
 
   const resetData = () => {
     localStorage.removeItem(STORAGE_KEY);
     setTasks(MOCK_TASKS);
     setFreeBlocks(MOCK_FREE_BLOCKS);
+    setMaterials([]);
   };  
 
-  const navItems = [
-    { key: "board", label: "Board", icon: LayoutGrid },
-    { key: "focus", label: "Focus Day", icon: Clock },
-    { key: "timeline", label: "Timeline", icon: GanttChartSquare },
-    { key: "task", label: "Task", icon: Grid2x2 },
-  ];
+const navItems = [
+  { key: "board", label: "Board", icon: LayoutGrid },
+  { key: "focus", label: "Focus Day", icon: Clock },
+  { key: "timeline", label: "Timeline", icon: GanttChartSquare },
+  { key: "task", label: "Task", icon: Grid2x2 },
+  { key: "material", label: "Material", icon: Library }, // THÊM DÒNG NÀY
+];
 
   return (
     <div className="min-h-screen w-full bg-zinc-950 text-zinc-200 font-['Inter'] flex">
@@ -1188,16 +1355,20 @@ export default function MinimalistFlow() {
         <div className="max-w-6xl mx-auto px-8 py-8">
           <header className="mb-6">
             <h1 className="text-lg font-semibold text-zinc-100">
+              {view === "stats" && "Hiệu quả công việc"}
               {view === "board" && "Board"}
               {view === "focus" && "Focus Day"}
               {view === "timeline" && "Timeline"}
               {view === "task" && "Task"}
+              {view === "material" && "Material"}
             </h1>
             <p className="text-xs text-zinc-600 mt-0.5">
               {view === "board" && "Schedule against real capacity, then execute — nothing more."}
+              {view === "stats" && "Statistics of completed tasks by weekday."}
               {view === "focus" && "Give today's tasks a real time slot, not just a place in a list."}
               {view === "timeline" && "Trace every task back to what it's actually for."}
               {view === "task" && "Audit everything. Drop what doesn't earn its place."}
+              {view === "material" && "Documents, Sheets and references for your work."}
             </p>
           </header>
 
@@ -1207,6 +1378,18 @@ export default function MinimalistFlow() {
           )}
           {view === "timeline" && <TimelineView tasks={tasks} setTasks={setTasks} />}
           {view === "task" && <TaskView tasks={tasks} setTasks={setTasks} />}
+          {view === "stats" && (
+              <StatisticsView
+                  tasks={tasks}
+              />
+          )}
+          {view === "material" && (
+              <MaterialView
+                  tasks={tasks}
+                  materials={materials}
+                  setMaterials={setMaterials}
+              />
+          )}
         </div>
       </main>
     </div>
