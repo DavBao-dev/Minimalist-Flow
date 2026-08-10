@@ -1,127 +1,146 @@
 # Minimalist Flow
 
-Minimalist Flow là một ứng dụng quản lý công việc cá nhân theo phương pháp Goal → Planning → Execution, được xây dựng bằng React.
+Minimalist Flow là một ứng dụng quản lý công việc cá nhân theo phương pháp:
 
-## Tính năng
+**Goal → Planning → Execution**
 
-- Board View (Kanban)
-- Timeline View
-- Focus Day
-- Task Management
-- Material Gallery
-  - Import tài liệu bằng URL
-  - Đặt tiêu đề tài liệu
-  - Xóa tài liệu
-- Statistics
-- Tự động lưu dữ liệu bằng LocalStorage
+Ứng dụng tập trung vào việc biến mục tiêu dài hạn thành kế hoạch cụ thể, sau đó đưa các task vào lịch làm việc thực tế.
 
----
+## ✨ Tính năng
 
-## Yêu cầu
+### 📋 Task Management
 
-- Node.js >= 18
-- npm >= 9
+- Tạo, chỉnh sửa và xóa task.
+- Phân loại task theo **Eisenhower Matrix**:
+  - Q1 — Urgent & Important
+  - Q2 — Not Urgent & Important
+  - Q3 — Urgent & Not Important
+  - Q4 — Not Urgent & Not Important
+- Thiết lập:
+  - Estimate
+  - Horizon
+  - Status
+  - Category
+- Horizon hỗ trợ:
+  - Day
+  - Week
+  - Month
+  - Quarter
+  - Year
+- Sắp xếp task theo Horizon.
+- Theo dõi trạng thái:
+  - Goal
+  - This Week
+  - Today
+  - Done
+  - Dropped
 
-Kiểm tra:
+### 🗂️ Task View
 
-```bash
-node -v
-npm -v
-```
+Task View cung cấp hai chế độ:
 
----
+- **Matrix View** — quản lý task theo Eisenhower Matrix.
+- **List View** — xem và chỉnh sửa task dưới dạng bảng.
 
-## Cài đặt
+List View cho phép chỉnh trực tiếp:
 
-Clone project:
+- Title
+- Matrix
+- Estimate
+- Horizon
+- Status
+- Category
+- Materials
 
-```bash
-git clone <repository-url>
-```
+### 📅 Board View
 
-Di chuyển vào thư mục:
+Board View tập trung vào việc lập kế hoạch cho tuần.
 
-```bash
-cd Minimalist-Flow
-```
+- Quản lý **Backlog trong tuần**.
+- Quản lý **Today**.
+- Kéo thả task để lên lịch.
+- Theo dõi task đã hoàn thành.
+- Theo dõi tổng thời gian đã schedule.
+- Quản lý capacity.
+- Task thuộc Horizon dài hạn như **Month / Quarter / Year** được xem là Goal và không tự động đưa vào lịch thực thi.
 
-Cài đặt dependencies:
+### 🎯 Focus Day
 
-```bash
-npm install
-```
+Focus Day chuyển kế hoạch trong ngày thành lịch làm việc thực tế.
 
-hoặc
+- Hiển thị các task `Today`.
+- Tạo **Free Time Blocks**.
+- Kéo task vào từng block.
+- Tự động tính thời lượng đã sử dụng.
+- Cảnh báo khi block bị quá tải.
+- Cho phép đưa task quá tải trở lại `This Week`.
+- Đồng bộ với **Fixed Calendar**.
 
-```bash
-npm i
-```
+### 📌 Fixed Calendar
 
----
+Fixed Calendar dùng để quản lý các lịch cố định được lên trước, ví dụ:
 
-## Chạy ở môi trường local
+- School
+- Class
+- Meeting
+- Training
+- Appointment
+- Các hoạt động có thời gian cố định.
 
-```bash
-npm run dev
-```
+Calendar hiển thị các fixed event theo ngày.
 
-Sau khi chạy thành công, mở trình duyệt:
+Các event trong Fixed Calendar được đồng bộ với **Focus Day**, giúp tạo các khoảng thời gian tương ứng để lên kế hoạch cho task.
 
-```
-http://localhost:5173
-```
+### 📚 Material Gallery
 
----
+Quản lý tài liệu liên quan đến task.
 
-## Build Production
+- Import tài liệu bằng URL.
+- Đặt title cho tài liệu.
+- Gắn material vào task.
+- Xóa material.
+- Hiển thị số lượng material trên task.
 
-```bash
-npm run build
-```
+### 📊 Statistics
 
-Preview bản build:
+Theo dõi hoạt động và tiến độ công việc thông qua các thống kê của hệ thống.
 
-```bash
-npm run preview
-```
+### 💾 LocalStorage
 
----
+Ứng dụng sử dụng **LocalStorage** để lưu dữ liệu cục bộ trên trình duyệt.
 
-## Cấu trúc chính
-
-```
-src/
-│
-├── App.jsx
-├── main.jsx
-├── components/
-├── assets/
-└── ...
-```
-
----
-
-## Lưu dữ liệu
-
-Ứng dụng sử dụng **LocalStorage** để lưu:
+Các dữ liệu chính bao gồm:
 
 - Tasks
 - Materials
 - Focus Blocks
+- Fixed Calendar Events
 
-Dữ liệu sẽ tự động được lưu sau mỗi lần chỉnh sửa và vẫn còn sau khi reload trình duyệt.
+Dữ liệu được tự động lưu sau khi có thay đổi và được khôi phục khi reload ứng dụng.
 
----
-
-## Công nghệ sử dụng
-
-- React
-- Vite
-- Tailwind CSS
-- Lucide React
+> **Lưu ý:** Dữ liệu hiện được lưu trên trình duyệt/local machine, chưa sử dụng database hoặc backend để đồng bộ giữa nhiều thiết bị.
 
 ---
 
-## License
+## 🧠 Workflow
 
-Dự án được phát triển phục vụ mục đích học tập và quản lý công việc cá nhân.
+Minimalist Flow được thiết kế theo quy trình:
+
+```text
+GOAL
+ │
+ │ Year / Quarter / Month
+ ▼
+PLANNING
+ │
+ │ Week
+ ▼
+EXECUTION
+ │
+ │ Today
+ ▼
+FOCUS DAY
+ │
+ │ Free Time Blocks
+ ▼
+DO THE WORK
