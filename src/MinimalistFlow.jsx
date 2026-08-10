@@ -49,7 +49,7 @@ const EXECUTION_HORIZONS = ["Week", "Day"];
 const HORIZON_META = {
   Year: { icon: Target, color: "text-fuchsia-300", label: "Yearly Goals" },
   Quarter: { icon: CalendarRange, color: "text-violet-300", label: "Quarterly Initiatives" },
-  Month: { icon: Calendar, color: "text-teal-300", label: "Monthly Plans" },
+  Month: { icon: Calendar, color: "text-teal-300", label: "Monthly Goal" },
   Week: { icon: CalendarDays, color: "text-sky-300", label: "Weekly Focus" },
   Day: { icon: Sun, color: "text-emerald-300", label: "Daily Execution" },
 };
@@ -101,6 +101,8 @@ const base = (overrides) => ({
   category: "MISC",
   materials: [],
   completedDay: null,
+  completedAt: null,
+  scheduledDate: null,
   ...overrides,
 });
 
@@ -168,6 +170,16 @@ const DEFAULT_DATA = {
   freeBlocks: MOCK_FREE_BLOCKS,
 };
 
+const dateKey = (date) => {
+  const d = new Date(date);
+
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+
+  return `${y}-${m}-${day}`;
+};
+
 const loadData = () => {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -203,6 +215,9 @@ function Mono({ children, className = "" }) {
   return <span className={`font-['JetBrains_Mono'] tabular-nums ${className}`}>{children}</span>;
 }
 
+
+
+
 function MatrixPill({ q, size = "xs" }) {
   const m = MATRIX[q];
   const pad = size === "xs" ? "px-1.5 py-0.5 text-[10px]" : "px-2 py-1 text-xs";
@@ -215,18 +230,261 @@ function MatrixPill({ q, size = "xs" }) {
 }
 
 function MatrixSelect({ value, onChange }) {
+  const safeValue = MATRIX[value] ? value : "Q3";
+
   return (
     <select
-      value={value}
+      value={safeValue}
       onChange={(e) => onChange(e.target.value)}
-      className={`bg-zinc-900 border border-zinc-800 rounded text-[11px] px-1.5 py-1 ${MATRIX[value].text} focus:outline-none focus:ring-1 focus:ring-zinc-600 cursor-pointer`}
+      className={`bg-zinc-900 border border-zinc-800 rounded text-[11px] px-1.5 py-1 ${
+        MATRIX[safeValue].text
+      } focus:outline-none focus:ring-1 focus:ring-zinc-600 cursor-pointer`}
     >
       {Object.keys(MATRIX).map((k) => (
-        <option key={k} value={k} className="bg-zinc-900 text-zinc-200">
+        <option
+          key={k}
+          value={k}
+          className="bg-zinc-900 text-zinc-200"
+        >
           {k} · {MATRIX[k].label}
         </option>
       ))}
     </select>
+  );
+}
+
+function FixedCalendarView({ fixedEvents, setFixedEvents }) {
+  const [currentDate, setCurrentDate] = useState(new Date());
+
+  const startOfWeek = (date) => {
+    const d = new Date(date);
+    const day = d.getDay();
+    const diff = day === 0 ? -6 : 1 - day;
+
+    d.setDate(d.getDate() + diff);
+    d.setHours(0, 0, 0, 0);
+
+    return d;
+  };
+
+  const addDays = (date, amount) => {
+    const d = new Date(date);
+    d.setDate(d.getDate() + amount);
+    return d;
+  };
+
+  const weekStart = startOfWeek(currentDate);
+
+  const weekDays = Array.from({ length: 7 }, (_, i) => {
+    const date = addDays(weekStart, i);
+
+    return {
+      date,
+      key: dateKey(date),
+    };
+  });
+
+  const addFixedEvent = (dateKey) => {
+    const title = window.prompt("Fixed event title:");
+
+    if (!title?.trim()) return;
+
+    const start = window.prompt(
+      "Start time:",
+      "09:00"
+    );
+
+    const end = window.prompt(
+      "End time:",
+      "10:00"
+    );
+
+    if (!start || !end) return;
+
+    setFixedEvents((prev) => [
+      ...prev,
+      {
+        id: uid(),
+        date: dateKey,
+        start,
+        end,
+        title: title.trim(),
+      },
+    ]);
+  };
+
+  const deleteFixedEvent = (id) => {
+    setFixedEvents((prev) =>
+      prev.filter((event) => event.id !== id)
+    );
+  };
+
+  return (
+    <div className="flex flex-col gap-4">
+
+      {/* HEADER */}
+
+      <div className="flex items-center justify-between">
+
+        <button
+          onClick={() =>
+            setCurrentDate(
+              addDays(currentDate, -7)
+            )
+          }
+          className="text-zinc-500 hover:text-zinc-200"
+        >
+          ‹
+        </button>
+
+        <div className="text-sm font-['JetBrains_Mono'] text-zinc-300">
+          {weekStart.toLocaleDateString("en-US", {
+            month: "short",
+            day: "numeric",
+          })}
+          {" – "}
+          {addDays(weekStart, 6).toLocaleDateString(
+            "en-US",
+            {
+              month: "short",
+              day: "numeric",
+            }
+          )}
+        </div>
+
+        <button
+          onClick={() =>
+            setCurrentDate(
+              addDays(currentDate, 7)
+            )
+          }
+          className="text-zinc-500 hover:text-zinc-200"
+        >
+          ›
+        </button>
+
+      </div>
+
+      {/* CALENDAR */}
+
+      <div className="grid grid-cols-7 gap-2">
+
+        {weekDays.map((day) => {
+
+          const events = (fixedEvents || [])
+            .filter(
+              (event) =>
+                event.date === day.key
+            )
+            .sort(
+              (a, b) =>
+                parseTimeToMinutes(a.start) -
+                parseTimeToMinutes(b.start)
+            );
+
+          const isToday =
+            day.key === dateKey(new Date());
+
+          return (
+            <div
+              key={day.key}
+              className={`min-h-[420px] rounded-xl border p-3 ${
+                isToday
+                  ? "border-amber-500/40 bg-amber-500/[0.03]"
+                  : "border-zinc-800 bg-zinc-900/30"
+              }`}
+            >
+
+              {/* DATE */}
+
+              <div className="mb-3">
+
+                <div
+                  className={`text-[11px] uppercase tracking-wider ${
+                    isToday
+                      ? "text-amber-400"
+                      : "text-zinc-500"
+                  }`}
+                >
+                  {day.date.toLocaleDateString(
+                    "en-US",
+                    {
+                      weekday: "short",
+                    }
+                  )}
+                </div>
+
+                <div className="text-lg font-semibold text-zinc-100">
+                  {day.date.toLocaleDateString(
+                    "en-US",
+                    {
+                      month: "short",
+                      day: "numeric",
+                    }
+                  )}
+                </div>
+
+              </div>
+
+              {/* EVENTS */}
+
+              <div className="flex flex-col gap-2">
+
+                {events.map((event) => (
+
+                  <div
+                    key={event.id}
+                    className="group rounded-lg border border-sky-500/30 bg-sky-500/[0.06] p-2.5"
+                  >
+
+                    <div className="flex items-start justify-between gap-2">
+
+                      <div className="min-w-0">
+
+                        <div className="text-xs font-medium text-sky-200 truncate">
+                          {event.title}
+                        </div>
+
+                        <div className="mt-1 text-[10px] text-sky-400/70 font-['JetBrains_Mono']">
+                          {event.start} – {event.end}
+                        </div>
+
+                      </div>
+
+                      <button
+                        onClick={() =>
+                          deleteFixedEvent(event.id)
+                        }
+                        className="opacity-0 group-hover:opacity-100 text-zinc-600 hover:text-rose-400"
+                      >
+                        ×
+                      </button>
+
+                    </div>
+
+                  </div>
+
+                ))}
+
+              </div>
+
+              {/* ADD */}
+
+              <button
+                onClick={() =>
+                  addFixedEvent(day.key)
+                }
+                className="mt-3 w-full rounded-lg border border-dashed border-zinc-800 py-2 text-[10px] text-zinc-600 hover:border-zinc-600 hover:text-zinc-400"
+              >
+                + Fixed event
+              </button>
+
+            </div>
+          );
+        })}
+
+      </div>
+    </div>
   );
 }
 
@@ -242,14 +500,22 @@ function CategoryPill({ category }) {
 }
 
 function CategorySelect({ value, onChange }) {
+  const safeValue = CATEGORY[value] ? value : "MISC";
+
   return (
     <select
-      value={value}
+      value={safeValue}
       onChange={(e) => onChange(e.target.value)}
-      className={`bg-zinc-900 border border-zinc-800 rounded text-[11px] px-1.5 py-1 ${CATEGORY[value].text} focus:outline-none focus:ring-1 focus:ring-zinc-600 cursor-pointer`}
+      className={`bg-zinc-900 border border-zinc-800 rounded text-[11px] px-1.5 py-1 ${
+        CATEGORY[safeValue].text
+      } focus:outline-none focus:ring-1 focus:ring-zinc-600 cursor-pointer`}
     >
       {CATEGORIES.map((k) => (
-        <option key={k} value={k} className="bg-zinc-900 text-zinc-200">
+        <option
+          key={k}
+          value={k}
+          className="bg-zinc-900 text-zinc-200"
+        >
           {CATEGORY[k].label}
         </option>
       ))}
@@ -274,7 +540,7 @@ function MaterialsCell({ task, onAddMaterial, onRemoveMaterial }) {
   return (
     <div className="flex flex-col gap-1 min-w-[180px]">
       <div className="flex flex-wrap gap-1">
-        {task.materials.map((m) => (
+        {(task.materials || []).map((m) => (
           <a
             key={m.id}
             href={m.url}
@@ -502,129 +768,563 @@ function BoardView({ tasks, setTasks }) {
   const [dragId, setDragId] = useState(null);
   const [capacity, setCapacity] = useState(80);
 
-  const scheduled = useMemo(
-    () =>
-      tasks
-        .filter((t) => t.status === "This Week" || t.status === "Today")
-        .reduce((sum, t) => sum + Number(t.estimate || 0), 0),
-    [tasks]
+  const startOfWeek = (date) => {
+    const d = new Date(date);
+    const day = d.getDay();
+    const diff = day === 0 ? -6 : 1 - day;
+
+    d.setDate(d.getDate() + diff);
+    d.setHours(0, 0, 0, 0);
+
+    return d;
+  };
+  
+  const isGoalTask = (task) =>
+  task.status === "Goal" ||
+  ["Year", "Quarter", "Month"].includes(task.horizon);
+
+
+  const addDays = (date, amount) => {
+    const d = new Date(date);
+    d.setDate(d.getDate() + amount);
+    return d;
+  };
+
+
+  const today = new Date();
+  const todayKey = dateKey(today);
+
+  const weekStart = startOfWeek(today);
+  const weekEnd = addDays(weekStart, 6);
+
+  const weekStartKey = dateKey(weekStart);
+  const weekEndKey = dateKey(weekEnd);
+
+  /*
+   * =========================
+   * TODAY
+   * =========================
+   */
+
+  const todayTasks = tasks.filter(
+    (t) =>
+      !isGoalTask(t) &&
+      t.status !== "Dropped" &&
+      t.scheduledDate &&
+      t.scheduledDate >= weekStartKey &&
+      t.scheduledDate <= weekEndKey
   );
 
-  const grouped = useMemo(() => {
-    const g = { "This Week": [], Today: [], Done: [] };
-    tasks.forEach((t) => {
-      if (g[t.status]) g[t.status].push(t);
-    });
-    return g;
-  }, [tasks]);
+  /*
+   * =========================
+   * BACKLOG
+   * =========================
+   *
+   * Includes:
+   * - tasks without a date
+   * - tasks scheduled for another day this week
+   *
+   * Excludes:
+   * - Done
+   * - Dropped
+   * - Today
+   */
+
+  const backlogTasks = tasks.filter((t) => {
+    if (t.status === "Dropped") return false;
+    if (t.status === "Done") return false;
+
+    // Goal: Year / Quarter / Month
+    // Không đưa vào Board
+    if (["Year", "Quarter", "Month"].includes(t.horizon)) {
+      return false;
+    }
+
+    // Không có ngày schedule -> backlog
+    if (!t.scheduledDate) return true;
+
+    const isThisWeek =
+      t.scheduledDate >= weekStartKey &&
+      t.scheduledDate <= weekEndKey;
+
+    const isToday =
+      t.scheduledDate === todayKey;
+
+    // Task của tuần nhưng không phải Today
+    return isThisWeek && !isToday;
+  });
+  /*
+   * =========================
+   * STATS
+   * =========================
+   */
+
+  const completed = todayTasks.filter(
+    (t) => t.status === "Done"
+  ).length;
+
+  const scheduled = todayTasks
+    .filter((t) => t.status !== "Done")
+    .reduce(
+      (sum, t) => sum + Number(t.estimate || 0),
+      0
+    );
+
+  const todayProgress =
+    todayTasks.length === 0
+      ? 0
+      : Math.round(
+          (completed / todayTasks.length) * 100
+        );
+
+  /*
+   * =========================
+   * DRAG
+   * =========================
+   */
 
   const handleDragStart = (e, id) => {
     setDragId(id);
+
     e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", id);
   };
 
-  const handleDrop = (status) => {
+  /*
+   * BACKLOG -> TODAY
+   */
+
+  const handleDropToToday = () => {
     if (!dragId) return;
+
     setTasks((prev) =>
       prev.map((t) => {
         if (t.id !== dragId) return t;
-        if (status === "Done" && t.status !== "Done") return { ...t, status, completedDay: todayAbbrev() };
-        if (status !== "Done" && t.status === "Done") return { ...t, status, completedDay: null };
-        return { ...t, status };
+
+        return {
+          ...t,
+          scheduledDate: todayKey,
+          status: "Today",
+          completedDay: null,
+          completedAt: null,
+        };
       })
     );
+
     setDragId(null);
   };
 
-  const addTask = (status, title) => {
-    setTasks((prev) => [...prev, base({ id: uid(), title, matrix: "Q3", estimate: 1, horizon: "Week", status })]);
+  /*
+   * TODAY -> BACKLOG
+   */
+
+  const handleDropToBacklog = () => {
+    if (!dragId) return;
+
+    setTasks((prev) =>
+      prev.map((t) => {
+        if (t.id !== dragId) return t;
+
+        return {
+          ...t,
+          scheduledDate: null,
+          status: "This Week",
+        };
+      })
+    );
+
+    setDragId(null);
   };
 
-  const deleteTask = (id) => setTasks((prev) => prev.filter((t) => t.id !== id));
+  /*
+   * =========================
+   * COMPLETE
+   * =========================
+   */
 
-  const updateField = (id, field, value) =>
-    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, [field]: value } : t)));
+  const completeTask = (id) => {
+    setTasks((prev) =>
+      prev.map((t) =>
+        t.id === id
+          ? {
+              ...t,
+              status: "Done",
+              completedDay: todayAbbrev(),
+              completedAt:
+                new Date().toISOString(),
+            }
+          : t
+      )
+    );
+  };
 
-  const addSubtask = (id, text) =>
-    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, subtasks: [...t.subtasks, text] } : t)));
+  /*
+   * =========================
+   * CREATE TASK
+   * =========================
+   *
+   * ONLY from BACKLOG
+   */
 
-  const createBatchBox = () => {
-    const exists = tasks.some((t) => t.isBatchBox && t.status !== "Done" && t.status !== "Dropped");
-    if (exists) return;
+  const addTask = (title) => {
+    if (!title?.trim()) return;
+
     setTasks((prev) => [
       ...prev,
-      base({ id: uid(), title: "[Batch] Misc Admin", matrix: "Q3", estimate: 1, horizon: "Week", status: "This Week", isBatchBox: true }),
+      base({
+        id: uid(),
+        title: title.trim(),
+        matrix: "Q3",
+        estimate: 1,
+        horizon: "Day",
+        status: "This Week",
+        scheduledDate: null,
+      }),
     ]);
   };
 
+  /*
+   * =========================
+   * DELETE
+   * =========================
+   */
+
+  const deleteTask = (id) => {
+    setTasks((prev) =>
+      prev.filter((t) => t.id !== id)
+    );
+  };
+
+  /*
+   * =========================
+   * UPDATE
+   * =========================
+   */
+
+  const updateField = (id, field, value) => {
+    setTasks((prev) =>
+      prev.map((t) =>
+        t.id === id
+          ? {
+              ...t,
+              [field]: value,
+            }
+          : t
+      )
+    );
+  };
+
+  /*
+   * =========================
+   * SUBTASK
+   * =========================
+   */
+
+  const addSubtask = (id, text) => {
+    setTasks((prev) =>
+      prev.map((t) =>
+        t.id === id
+          ? {
+              ...t,
+              subtasks: [
+                ...(t.subtasks || []),
+                text,
+              ],
+            }
+          : t
+      )
+    );
+  };
+
+  /*
+   * =========================
+   * RENDER
+   * =========================
+   */
+
   return (
-    <div className="flex flex-col gap-6 h-full">
-      {/* Scheduler widget */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2">
-          <CapacityGauge capacity={capacity} scheduled={scheduled} onCapacityChange={setCapacity} />
+    <div className="flex flex-col gap-5">
+
+      {/* =========================
+          HEADER
+      ========================== */}
+
+      <div className="flex items-end justify-between">
+        <div>
+          <div className="text-[11px] uppercase tracking-[0.25em] text-zinc-600">
+            Planning for
+          </div>
+
+          <div className="mt-1 text-lg font-['JetBrains_Mono'] text-zinc-200">
+            {weekStart.toLocaleDateString("en-US", {
+              month: "short",
+              day: "numeric",
+            })}
+            {" – "}
+            {weekEnd.toLocaleDateString("en-US", {
+              month: "short",
+              day: "numeric",
+            })}
+          </div>
         </div>
-        <button
-          onClick={createBatchBox}
-          className="group flex items-center justify-center gap-2 rounded-xl border border-amber-500/25 bg-amber-500/[0.05] hover:bg-amber-500/[0.1] hover:border-amber-500/40 transition-all text-amber-300 text-sm font-medium px-4"
-        >
-          <Package size={16} className="group-hover:scale-110 transition-transform" />
-          Create Weekly Batch Box
-        </button>
+
+        <div className="text-sm text-zinc-500 font-['JetBrains_Mono']">
+          {todayTasks.length} today ·{" "}
+          {todayProgress}%
+        </div>
       </div>
 
-      {/* Columns */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 flex-1 min-h-0">
-        {COLUMNS.map((col) => {
-          const items = grouped[col.key];
-          const isToday = col.key === "Today";
-          const overWip = isToday && items.length > 3;
-          return (
-            <div
-              key={col.key}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={() => handleDrop(col.key)}
-              className={`flex flex-col rounded-xl border bg-zinc-950/40 min-h-[420px] transition-colors ${
-                overWip ? "border-rose-500/50 bg-rose-500/[0.03]" : "border-zinc-800"
-              }`}
-            >
-              <div className="flex items-center justify-between px-3.5 pt-3.5 pb-2">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-sm font-semibold text-zinc-100">{col.label}</h3>
-                    <span
-                      className={`font-['JetBrains_Mono'] text-[11px] rounded-full px-1.5 leading-4 ${
-                        overWip ? "bg-rose-500/20 text-rose-300" : "bg-zinc-800 text-zinc-400"
-                      }`}
-                    >
-                      {items.length}
-                    </span>
-                    {overWip && <AlertTriangle size={12} className="text-rose-400" />}
-                  </div>
-                  <p className="text-[11px] text-zinc-600 mt-0.5">{col.hint}</p>
-                </div>
+      {/* =========================
+          PROGRESS
+      ========================== */}
+
+      <div className="h-1 bg-zinc-900 rounded-full overflow-hidden">
+        <div
+          className="h-full bg-amber-400 transition-all"
+          style={{
+            width: `${todayProgress}%`,
+          }}
+        />
+      </div>
+
+      {/* =========================
+          CAPACITY
+      ========================== */}
+
+      <CapacityGauge
+        capacity={capacity}
+        scheduled={scheduled}
+        onCapacityChange={setCapacity}
+      />
+
+      {/* =========================
+          TWO COLUMN BOARD
+      ========================== */}
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+        {/* =========================
+            BACKLOG
+        ========================== */}
+
+        <div
+          onDragOver={(e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "move";
+          }}
+          onDrop={handleDropToBacklog}
+          className="min-h-[420px] rounded-2xl border border-dashed border-zinc-800 bg-zinc-950/40 p-4"
+        >
+
+          {/* HEADER */}
+
+          <div className="flex items-start justify-between mb-4">
+
+            <div>
+              <div className="text-[11px] uppercase tracking-[0.25em] text-zinc-500">
+                BACKLOG
               </div>
 
-              <div className="flex-1 px-3 pb-3 space-y-2 overflow-y-auto">
-                {items.map((t) => (
-                  <TaskCard
-                    key={t.id}
-                    task={t}
-                    isDragging={dragId === t.id}
-                    onDragStart={handleDragStart}
-                    onDelete={deleteTask}
-                    onDrop={updateField}
-                    onAddSubtask={addSubtask}
-                  />
-                ))}
-                {col.key !== "Done" && <QuickAdd onAdd={(title) => addTask(col.key, title)} />}
-                {items.length === 0 && col.key === "Done" && (
-                  <p className="text-center text-zinc-700 text-xs py-8">Nothing shipped yet.</p>
-                )}
+              <div className="mt-1 text-[11px] text-zinc-700">
+                Tasks waiting to be scheduled
               </div>
             </div>
-          );
-        })}
+
+            <span className="font-['JetBrains_Mono'] text-xs text-zinc-600">
+              {backlogTasks.length}
+            </span>
+
+          </div>
+
+          {/* TASKS */}
+
+          <div className="space-y-2">
+
+            {backlogTasks.map((task) => (
+              <TaskCard
+                key={task.id}
+                task={task}
+                onDragStart={handleDragStart}
+                onDelete={deleteTask}
+                onDrop={updateField}
+                onAddSubtask={addSubtask}
+                isDragging={
+                  dragId === task.id
+                }
+              />
+            ))}
+
+            {backlogTasks.length === 0 && (
+              <div className="h-32 flex items-center justify-center rounded-xl border border-dashed border-zinc-800 text-xs text-zinc-700">
+                No tasks in backlog
+              </div>
+            )}
+
+          </div>
+
+          {/* CREATE ONLY HERE */}
+
+          <div className="mt-4">
+            <QuickAdd
+              onAdd={addTask}
+              placeholder="Create a task in Backlog…"
+            />
+          </div>
+
+        </div>
+
+        {/* =========================
+            TODAY
+        ========================== */}
+
+        <div
+          onDragOver={(e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "move";
+          }}
+          onDrop={handleDropToToday}
+          className="min-h-[420px] rounded-2xl border border-amber-500/50 bg-amber-500/[0.035] p-5"
+        >
+
+          {/* TODAY HEADER */}
+
+          <div className="flex items-start justify-between mb-6">
+
+            <div>
+
+              {/* BIG TODAY */}
+
+              <div className="text-3xl font-semibold tracking-tight text-amber-400">
+                TODAY
+              </div>
+
+              {/* DATE UNDER TODAY */}
+
+              <div className="mt-1 text-sm font-['JetBrains_Mono'] text-zinc-500">
+                {today.toLocaleDateString(
+                  "en-US",
+                  {
+                    weekday: "long",
+                    month: "short",
+                    day: "numeric",
+                  }
+                )}
+              </div>
+
+            </div>
+
+            <div className="text-right">
+
+              <div className="font-['JetBrains_Mono'] text-sm text-zinc-500">
+                {todayTasks.length}
+              </div>
+
+              <div className="text-[10px] uppercase tracking-wider text-zinc-700">
+                tasks
+              </div>
+
+            </div>
+
+          </div>
+
+          {/* TODAY PROGRESS */}
+
+          <div className="mb-5">
+
+            <div className="flex items-center justify-between mb-1.5">
+
+              <span className="text-[10px] uppercase tracking-wider text-zinc-600">
+                Progress
+              </span>
+
+              <span className="font-['JetBrains_Mono'] text-[10px] text-zinc-600">
+                {completed}/{todayTasks.length}
+              </span>
+
+            </div>
+
+            <div className="h-1 bg-zinc-900 rounded-full overflow-hidden">
+
+              <div
+                className="h-full bg-emerald-500/70 transition-all"
+                style={{
+                  width: `${todayProgress}%`,
+                }}
+              />
+
+            </div>
+
+          </div>
+
+          {/* TASKS */}
+
+          <div className="space-y-2">
+
+            {todayTasks.map((task) => (
+              <div
+                key={task.id}
+                className={
+                  task.status === "Done"
+                    ? "opacity-50"
+                    : ""
+                }
+              >
+
+                <TaskCard
+                  task={task}
+                  onDragStart={handleDragStart}
+                  onDelete={deleteTask}
+                  onDrop={updateField}
+                  onAddSubtask={addSubtask}
+                  isDragging={
+                    dragId === task.id
+                  }
+                />
+
+                {/* COMPLETE */}
+
+                <label className="flex items-center gap-2 px-2 mt-1 cursor-pointer">
+
+                  <input
+                    type="checkbox"
+                    checked={
+                      task.status === "Done"
+                    }
+                    onChange={() =>
+                      completeTask(task.id)
+                    }
+                    className="accent-emerald-500"
+                  />
+
+                  <span className="text-[10px] text-zinc-600">
+                    {task.status === "Done"
+                      ? "Completed"
+                      : "Mark complete"}
+                  </span>
+
+                </label>
+
+              </div>
+            ))}
+
+            {todayTasks.length === 0 && (
+              <div className="h-40 flex flex-col items-center justify-center rounded-xl border border-dashed border-zinc-800">
+
+                <div className="text-sm text-zinc-600">
+                  No tasks for today
+                </div>
+
+                <div className="mt-1 text-[10px] text-zinc-700">
+                  Drag a task from Backlog
+                </div>
+
+              </div>
+            )}
+
+          </div>
+
+        </div>
+
       </div>
     </div>
   );
@@ -771,7 +1471,10 @@ function TaskListRow({ task, onUpdate, onDelete, onAddMaterial, onRemoveMaterial
           onChange={(e) => onUpdate(task.id, "horizon", e.target.value)}
           className="bg-zinc-900 border border-zinc-800 rounded text-xs px-1.5 py-1 text-zinc-300 focus:outline-none focus:border-zinc-600"
         >
-          {(task.status === "Goal" ? HORIZONS : EXECUTION_HORIZONS).map((h) => (
+          {(task.status === "Goal"
+              ? GOAL_HORIZONS
+              : EXECUTION_HORIZONS
+           ).map((h) => (
             <option key={h} value={h}>{h}</option>
           ))}
         </select>
@@ -1004,26 +1707,112 @@ function BlockCapacityBar({ used, capacity }) {
   );
 }
 
-function FocusDayView({ tasks, setTasks, freeBlocks, setFreeBlocks }) {
+
+
+function FocusDayView({ tasks, setTasks, freeBlocks, setFreeBlocks, fixedEvents}) {
+  const todayKey = dateKey(new Date());
+
+  const todayFixedEvents = (fixedEvents || [])
+    .filter((event) => event.date === todayKey)
+    .sort(
+      (a, b) =>
+        parseTimeToMinutes(a.start) -
+        parseTimeToMinutes(b.start)
+    );
   const [dragId, setDragId] = useState(null);
   const [newStart, setNewStart] = useState("09:00");
   const [newEnd, setNewEnd] = useState("10:00");
   const [newLabel, setNewLabel] = useState("");
 
-  const todayTasks = tasks.filter((t) => t.status === "Today");
+  const isGoalTask = (task) =>
+  task.status === "Goal" ||
+  ["Year", "Quarter", "Month"].includes(task.horizon);
+
+  const todayTasks = tasks.filter(
+    (t) =>
+      t.status === "Today" &&
+      !isGoalTask(t) &&
+      t.status !== "Dropped" &&
+      t.status !== "Done"
+  );
   const unscheduled = todayTasks.filter((t) => !t.blockId);
   const sortedBlocks = useMemo(
-    () => [...freeBlocks].sort((a, b) => parseTimeToMinutes(a.start) - parseTimeToMinutes(b.start)),
-    [freeBlocks]
+    () =>
+      [...freeBlocks]
+        .filter(
+          (block) =>
+            !todayFixedEvents.some(
+              (fixed) =>
+                parseTimeToMinutes(block.start) <
+                  parseTimeToMinutes(fixed.end) &&
+                parseTimeToMinutes(block.end) >
+                  parseTimeToMinutes(fixed.start)
+            )
+        )
+        .sort(
+          (a, b) =>
+            parseTimeToMinutes(a.start) -
+            parseTimeToMinutes(b.start)
+        ),
+    [freeBlocks, todayFixedEvents]
   );
+  const generateFreeBlocks = (events) => {
+    const blocks = [];
 
+    if (events.length === 0) {
+      return [];
+    }
+
+    const sorted = [...events].sort(
+      (a, b) =>
+        parseTimeToMinutes(a.start) -
+        parseTimeToMinutes(b.start)
+    );
+
+    for (let i = 0; i < sorted.length - 1; i++) {
+      const current = sorted[i];
+      const next = sorted[i + 1];
+
+      const currentEnd =
+        parseTimeToMinutes(current.end);
+
+      const nextStart =
+        parseTimeToMinutes(next.start);
+
+      if (nextStart > currentEnd) {
+        blocks.push({
+          id: `auto-${current.id}-${next.id}`,
+          start: current.end,
+          end: next.start,
+          label: "Free time",
+          auto: true,
+        });
+      }
+    }
+
+    return blocks;
+  };
   const handleDragStart = (e, id) => {
     setDragId(id);
     e.dataTransfer.effectAllowed = "move";
   };
   const assign = (blockId) => {
     if (!dragId) return;
-    setTasks((prev) => prev.map((t) => (t.id === dragId ? { ...t, blockId } : t)));
+
+    setTasks((prev) =>
+      prev.map((t) => {
+        if (t.id !== dragId) return t;
+
+        // Goal không được đưa vào Focus Day
+        if (isGoalTask(t)) return t;
+
+        return {
+          ...t,
+          blockId,
+        };
+      })
+    );
+
     setDragId(null);
   };
 
@@ -1197,61 +1986,416 @@ function FocusDayView({ tasks, setTasks, freeBlocks, setFreeBlocks }) {
 }
 
 function StatisticsView({ tasks }) {
-  const stats = DAYS.map((day) => ({
-    day,
-    count: tasks.filter(
-      (t) => t.status === "Done" && t.completedDay === day
-    ).length,
-  }));
+  const now = new Date();
 
-  const max = Math.max(...stats.map((s) => s.count), 0);
+  // =========================
+  // ALL COMPLETED TASKS
+  // =========================
+  const completedTasks = tasks.filter(
+    (t) => t.status === "Done" && t.completedAt
+  );
+
+  const totalTasks = tasks.filter(
+    (t) => t.status !== "Dropped"
+  ).length;
+
+  const completedCount = completedTasks.length;
+
+  const completionRate =
+    totalTasks > 0
+      ? Math.round((completedCount / totalTasks) * 100)
+      : 0;
+
+  // =========================
+  // LAST YEAR ACTIVITY
+  // =========================
+  const oneYearAgo = new Date(now);
+  oneYearAgo.setFullYear(now.getFullYear() - 1);
+
+  const lastYearTasks = completedTasks.filter(
+    (t) => new Date(t.completedAt) >= oneYearAgo
+  );
+
+  // =========================
+  // WEEKLY DATA
+  // =========================
+  const startOfWeek = (date) => {
+    const d = new Date(date);
+    const day = d.getDay();
+    const diff = day === 0 ? -6 : 1 - day;
+
+    d.setDate(d.getDate() + diff);
+    d.setHours(0, 0, 0, 0);
+
+    return d;
+  };
+
+  const addDays = (date, amount) => {
+    const d = new Date(date);
+    d.setDate(d.getDate() + amount);
+    return d;
+  };
+
+
+  const currentWeekStart = startOfWeek(now);
+
+  // =========================
+  // WEEKS TRACKED
+  // =========================
+  const firstCompletionDate =
+    completedTasks.length > 0
+      ? new Date(
+          Math.min(
+            ...completedTasks.map((t) =>
+              new Date(t.completedAt).getTime()
+            )
+          )
+        )
+      : now;
+
+  const firstWeek = startOfWeek(firstCompletionDate);
+
+  const weeksTracked = Math.max(
+    1,
+    Math.floor(
+      (currentWeekStart - firstWeek) /
+        (7 * 24 * 60 * 60 * 1000)
+    ) + 1
+  );
+
+  // =========================
+  // WEEKLY COMPLETION
+  // =========================
+  const getWeekCompletion = (weekStart) => {
+    const weekEnd = addDays(weekStart, 7);
+
+    const weekCompleted = completedTasks.filter((t) => {
+      const d = new Date(t.completedAt);
+      return d >= weekStart && d < weekEnd;
+    }).length;
+
+    const weekTotal = tasks.filter((t) => {
+      if (t.status === "Dropped") return false;
+
+      if (!t.completedAt) return false;
+
+      const d = new Date(t.completedAt);
+
+      return d >= weekStart && d < weekEnd;
+    }).length;
+
+    if (weekTotal === 0) return 0;
+
+    return Math.round(
+      (weekCompleted / weekTotal) * 100
+    );
+  };
+
+  // =========================
+  // WEEK STREAK
+  // 50%+ completion
+  // =========================
+  let weekStreak = 0;
+
+  for (let i = 0; i < weeksTracked; i++) {
+    const weekStart = addDays(
+      currentWeekStart,
+      -i * 7
+    );
+
+    const completion = getWeekCompletion(weekStart);
+
+    if (completion >= 50) {
+      weekStreak++;
+    } else {
+      break;
+    }
+  }
+
+  // =========================
+  // BY WEEKDAY
+  // =========================
+  const weekdayStats = DAYS.map((day, index) => {
+    const weekdayTasks = tasks.filter((t) => {
+      if (!t.completedAt || t.status === "Dropped") {
+        return false;
+      }
+
+      const completedDate = new Date(t.completedAt);
+
+      // JS: Sunday = 0
+      // DAYS: Monday = 0
+      const weekdayIndex =
+        (completedDate.getDay() + 6) % 7;
+
+      return weekdayIndex === index;
+    });
+
+    const completed = weekdayTasks.filter(
+      (t) => t.status === "Done"
+    ).length;
+
+    const total = weekdayTasks.length;
+
+    const percentage =
+      total > 0
+        ? Math.round((completed / total) * 100)
+        : 0;
+
+    return {
+      day,
+      completed,
+      total,
+      percentage,
+    };
+  });
+
+  const strongestDay = [...weekdayStats]
+    .filter((s) => s.total > 0)
+    .sort((a, b) => b.percentage - a.percentage)[0];
+
+  const maxWeekdayPercentage = Math.max(
+    ...weekdayStats.map((s) => s.percentage),
+    1
+  );
+
+  // =========================
+  // ACTIVITY HEATMAP
+  // =========================
+  const activityDays = [];
+
+  for (let i = 364; i >= 0; i--) {
+    const date = addDays(now, -i);
+    const key = dateKey(date);
+
+    const count = lastYearTasks.filter(
+      (t) => dateKey(new Date(t.completedAt)) === key
+    ).length;
+
+    activityDays.push({
+      date,
+      key,
+      count,
+    });
+  }
+
+  const maxActivity = Math.max(
+    ...activityDays.map((d) => d.count),
+    1
+  );
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
-        <h2 className="text-lg font-semibold text-zinc-100 mb-1">
-          Hiệu quả công việc
-        </h2>
-        <p className="text-sm text-zinc-500">
-          Số lượng task hoàn thành theo từng ngày trong tuần.
-        </p>
+    <div className="space-y-6">
+
+
+      {/* TOP STATISTICS */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+
+        {/* WEEK STREAK */}
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
+          <div className="text-[10px] uppercase tracking-[0.2em] text-zinc-600">
+            Week streak
+          </div>
+
+          <div className="mt-3 flex items-end gap-2">
+            <span className="text-3xl font-semibold text-zinc-100 font-['JetBrains_Mono']">
+              {weekStreak}
+            </span>
+
+            <span className="text-xs text-zinc-600 mb-1">
+              weeks
+            </span>
+          </div>
+
+          <div className="text-[11px] text-zinc-600 mt-2">
+            in a row at 50%+
+          </div>
+        </div>
+
+        {/* WEEKS TRACKED */}
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
+          <div className="text-[10px] uppercase tracking-[0.2em] text-zinc-600">
+            Weeks tracked
+          </div>
+
+          <div className="mt-3 flex items-end gap-2">
+            <span className="text-3xl font-semibold text-zinc-100 font-['JetBrains_Mono']">
+              {weeksTracked}
+            </span>
+
+            <span className="text-xs text-zinc-600 mb-1">
+              weeks
+            </span>
+          </div>
+
+          <div className="text-[11px] text-zinc-600 mt-2">
+            all-time
+          </div>
+        </div>
+
+        {/* AVG COMPLETION */}
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
+          <div className="text-[10px] uppercase tracking-[0.2em] text-zinc-600">
+            Avg completion
+          </div>
+
+          <div className="mt-3 flex items-end gap-2">
+            <span className="text-3xl font-semibold text-zinc-100 font-['JetBrains_Mono']">
+              {completionRate}%
+            </span>
+          </div>
+
+          <div className="text-[11px] text-zinc-600 mt-2">
+            {completedCount} of {totalTasks} tasks done
+          </div>
+        </div>
       </div>
 
-      <div className="space-y-3">
-        {stats.map((s) => (
-          <div
-            key={s.day}
-            className={`rounded-lg border p-3 ${
-              s.count === max && max > 0
-                ? "border-emerald-500/40 bg-emerald-500/10"
-                : "border-zinc-800 bg-zinc-900/40"
-            }`}
-          >
-            <div className="flex items-center justify-between mb-2">
-              <span className="font-medium text-zinc-200">
-                {DAY_FULL[s.day]}
-              </span>
+      {/* ACTIVITY */}
+      <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
 
-              <span className="font-['JetBrains_Mono'] text-zinc-400">
-                {s.count} task{s.count !== 1 ? "s" : ""}
-                {s.count === max && max > 0 && " 🏆"}
-              </span>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <div className="text-xs font-medium text-zinc-300">
+              Activity
             </div>
 
-            <div className="w-full h-2 bg-zinc-800 rounded">
-              <div
-                className="h-2 rounded bg-emerald-400"
-                style={{
-                  width: `${max === 0 ? 0 : (s.count / max) * 100}%`,
-                }}
-              />
+            <div className="text-[11px] text-zinc-600 mt-1">
+              {lastYearTasks.length} tasks completed in
+              the last year.
             </div>
           </div>
-        ))}
+
+          <div className="text-[10px] text-zinc-700">
+            Last 365 days
+          </div>
+        </div>
+
+        {/* HEATMAP */}
+        <div className="overflow-x-auto">
+          <div
+            className="grid gap-[3px]"
+            style={{
+              gridTemplateColumns:
+                "repeat(53, minmax(10px, 1fr))",
+              minWidth: "650px",
+            }}
+          >
+            {activityDays.map((day) => {
+              const intensity =
+                day.count === 0
+                  ? "bg-zinc-900"
+                  : day.count >= maxActivity * 0.75
+                  ? "bg-emerald-400"
+                  : day.count >= maxActivity * 0.5
+                  ? "bg-emerald-500/70"
+                  : day.count >= maxActivity * 0.25
+                  ? "bg-emerald-500/40"
+                  : "bg-emerald-500/20";
+
+              return (
+                <div
+                  key={day.key}
+                  title={`${day.key}: ${day.count} completed`}
+                  className={`aspect-square rounded-[2px] ${intensity}`}
+                />
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-1.5 mt-3">
+          <span className="text-[10px] text-zinc-700">
+            Less
+          </span>
+
+          <div className="w-2.5 h-2.5 rounded-sm bg-zinc-900" />
+          <div className="w-2.5 h-2.5 rounded-sm bg-emerald-500/20" />
+          <div className="w-2.5 h-2.5 rounded-sm bg-emerald-500/40" />
+          <div className="w-2.5 h-2.5 rounded-sm bg-emerald-500/70" />
+          <div className="w-2.5 h-2.5 rounded-sm bg-emerald-400" />
+
+          <span className="text-[10px] text-zinc-700">
+            More
+          </span>
+        </div>
+      </div>
+
+      {/* BY WEEKDAY */}
+      <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
+
+        <div className="mb-5">
+          <div className="text-xs font-medium text-zinc-300">
+            By weekday
+          </div>
+
+          {strongestDay ? (
+            <div className="text-[11px] text-zinc-600 mt-1">
+              {DAY_FULL[strongestDay.day]} is your strongest
+              day, with {strongestDay.percentage}% done.
+            </div>
+          ) : (
+            <div className="text-[11px] text-zinc-600 mt-1">
+              No completed tasks yet.
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-4">
+          {weekdayStats.map((s) => (
+            <div key={s.day}>
+
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-xs text-zinc-400">
+                  {DAY_FULL[s.day]}
+                </span>
+
+                <span className="text-[11px] font-['JetBrains_Mono'] text-zinc-600">
+                  {s.percentage}%
+                </span>
+              </div>
+
+              {/* ENERGY BAR */}
+              <div className="flex gap-1 h-3">
+                {Array.from({ length: 20 }).map(
+                  (_, i) => {
+                    const threshold =
+                      ((i + 1) / 20) * 100;
+
+                    const filled =
+                      s.percentage >= threshold;
+
+                    return (
+                      <div
+                        key={i}
+                        className={`flex-1 rounded-[2px] transition-all ${
+                          filled
+                            ? "bg-emerald-400"
+                            : "bg-zinc-800"
+                        }`}
+                      />
+                    );
+                  }
+                )}
+              </div>
+
+              <div className="flex justify-between mt-1">
+                <span className="text-[9px] text-zinc-700">
+                  {s.completed} completed
+                </span>
+
+                <span className="text-[9px] text-zinc-700">
+                  {s.total} tracked
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
 }
+
 
 // ---------------------------------------------------------------------------
 // Root app
@@ -1259,6 +2403,14 @@ function StatisticsView({ tasks }) {
 export default function MinimalistFlow() {
   const initial = loadData();
   const [tasks, setTasks] = useState(initial.tasks);
+  const [fixedEvents, setFixedEvents] = useState(() => {
+    try {
+      const saved = localStorage.getItem("minimalist-flow-fixed-events");
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
   const [freeBlocks, setFreeBlocks] = useState(initial.freeBlocks);
   const [materials, setMaterials] = useState(initial.materials || []);
   const [view, setView] = useState("board");
@@ -1277,6 +2429,13 @@ export default function MinimalistFlow() {
     saveData();
   }, [tasks, freeBlocks, materials]);
 
+  useEffect(() => {
+    localStorage.setItem(
+      "minimalist-flow-fixed-events",
+      JSON.stringify(fixedEvents)
+    );
+  }, [fixedEvents]);
+
   const resetData = () => {
     localStorage.removeItem(STORAGE_KEY);
     setTasks(MOCK_TASKS);
@@ -1285,11 +2444,13 @@ export default function MinimalistFlow() {
   };  
 
 const navItems = [
-  { key: "board", label: "Board", icon: LayoutGrid },
-  { key: "focus", label: "Focus Day", icon: Clock },
-  { key: "timeline", label: "Timeline", icon: GanttChartSquare },
-  { key: "task", label: "Task", icon: Grid2x2 },
-  { key: "material", label: "Material", icon: Library }, // THÊM DÒNG NÀY
+  { key: "timeline", label: "Goals Timeline", icon: GanttChartSquare },
+  { key: "board", label: "Weekly Excution", icon: LayoutGrid },
+  { key: "focus", label: "Day Excution", icon: Clock },
+  { key: "fixed-calendar", label: "Fix Calendar", icon: CalendarDays },
+  { key: "task", label: "Eisenhower Matrix", icon: Grid2x2 },
+  { key: "stats", label: "Efficiency Statistics", icon: BarChart3 },
+  { key: "material", label: "Material", icon: Library },
 ];
 
   return (
@@ -1358,7 +2519,7 @@ const navItems = [
               {view === "stats" && "Hiệu quả công việc"}
               {view === "board" && "Board"}
               {view === "focus" && "Focus Day"}
-              {view === "timeline" && "Timeline"}
+              {view === "timeline" && "Goals Timeline"}
               {view === "task" && "Task"}
               {view === "material" && "Material"}
             </h1>
@@ -1374,10 +2535,24 @@ const navItems = [
 
           {view === "board" && <BoardView tasks={tasks} setTasks={setTasks} />}
           {view === "focus" && (
-            <FocusDayView tasks={tasks} setTasks={setTasks} freeBlocks={freeBlocks} setFreeBlocks={setFreeBlocks} />
+            <FocusDayView
+              tasks={tasks}
+              setTasks={setTasks}
+              freeBlocks={freeBlocks}
+              setFreeBlocks={setFreeBlocks}
+              fixedEvents={fixedEvents}
+            />
           )}
           {view === "timeline" && <TimelineView tasks={tasks} setTasks={setTasks} />}
           {view === "task" && <TaskView tasks={tasks} setTasks={setTasks} />}
+          {view === "fixed-calendar" && (
+            <FixedCalendarView
+              tasks={tasks}
+              setTasks={setTasks}
+              freeBlocks={freeBlocks}
+              setFreeBlocks={setFreeBlocks}
+            />
+          )}
           {view === "stats" && (
               <StatisticsView
                   tasks={tasks}
