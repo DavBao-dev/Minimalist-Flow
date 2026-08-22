@@ -30,9 +30,13 @@ Error generating stack: `+e.message+`
 
 // Minimal Streamlit Component protocol (keeps this pre-built React bundle dependency-free).
 (function(){
+  const LOG=(...a)=>console.info(`[MinimalistFlow]`,...a);
   const READY=`streamlit:componentReady`, RENDER=`streamlit:render`, VALUE=`streamlit:setComponentValue`, HEIGHT=`streamlit:setFrameHeight`;
   const post=(type,payload={})=>window.parent.postMessage(Object.assign({isStreamlitMessage:true,type},payload),`*`);
-  let started=false, sendTimer=null, originalSetItem=localStorage.setItem.bind(localStorage);
+  let started=false, usedFallback=false, seenRealRender=false;
+  let sendTimer=null, readyTimer=null, fallbackTimer=null;
+  const originalSetItem=localStorage.setItem.bind(localStorage);
+
   const emitState=()=>{
     try{
       const raw=localStorage.getItem(MFKEY);
@@ -43,25 +47,86 @@ Error generating stack: `+e.message+`
     }catch(err){console.error(`Minimalist Flow state sync failed`,err)}
   };
   const scheduleEmit=()=>{clearTimeout(sendTimer);sendTimer=setTimeout(emitState,250)};
-  window.addEventListener(`message`,ev=>{
-    const data=ev.data||{};
-    if(!data.isStreamlitMessage || data.type!==RENDER || started)return;
-    const args=data.args||{};
-    window.__MINIMALIST_USER__=args.username||``;
-    window.__MINIMALIST_INITIAL_STATE__=args.initial_state||null;
+
+  const reportHeight=()=>{
+    try{
+      const h=Math.max(document.documentElement.scrollHeight,document.body?document.body.scrollHeight:0,600);
+      post(HEIGHT,{height:h});
+    }catch(err){}
+  };
+
+  const mount=(username,initialState,fromFallback)=>{
+    window.__MINIMALIST_USER__=username||``;
+    window.__MINIMALIST_INITIAL_STATE__=initialState||null;
     if(window.__MINIMALIST_INITIAL_STATE__){
       originalSetItem(MFKEY,JSON.stringify({tasks:window.__MINIMALIST_INITIAL_STATE__.tasks||[],freeBlocks:window.__MINIMALIST_INITIAL_STATE__.freeBlocks||[],materials:window.__MINIMALIST_INITIAL_STATE__.materials||[]}));
       originalSetItem(`minimalist-flow-fixed-events`,JSON.stringify(window.__MINIMALIST_INITIAL_STATE__.fixedEvents||[]));
-    }else{
+    }else if(!started){
       localStorage.removeItem(MFKEY);
       localStorage.removeItem(`minimalist-flow-fixed-events`);
     }
-    localStorage.setItem= function(k,v){ originalSetItem(k,v); if(k===MFKEY||k===`minimalist-flow-fixed-events`) scheduleEmit(); };
+    localStorage.setItem=function(k,v){ originalSetItem(k,v); if(k===MFKEY||k===`minimalist-flow-fixed-events`) scheduleEmit(); };
+    clearInterval(readyTimer);
+    clearTimeout(fallbackTimer);
     started=true;
-    (0,v.createRoot)(document.getElementById(`root`)).render((0,O.jsx)(_.StrictMode,{children:(0,O.jsx)(MFROOT,{})}));
-    post(HEIGHT,{height:1000});
+    usedFallback=!!fromFallback;
+    const root=document.getElementById(`root`);
+    root.innerHTML=``;
+    (0,v.createRoot)(root).render((0,O.jsx)(_.StrictMode,{children:(0,O.jsx)(MFROOT,{})}));
+    reportHeight();
+    if(window.ResizeObserver && !window.__MF_RO__){
+      window.__MF_RO__=new ResizeObserver(reportHeight);
+      window.__MF_RO__.observe(root);
+    }
+    LOG(fromFallback?`mounted from local/demo fallback (no streamlit:render received in time)`:`mounted from streamlit:render`);
+  };
+
+  window.addEventListener(`message`,ev=>{
+    const data=ev.data||{};
+    if(!data.isStreamlitMessage || data.type!==RENDER)return;
+    const args=data.args||{};
+    LOG(`streamlit:render received`,{hasInitialState:!!args.initial_state,started,usedFallback});
+    if(seenRealRender)return; // already running on real server state; ignore later reruns
+    if(started && !usedFallback){
+      // Already running from a previous real render (normal Streamlit rerun
+      // with unchanged args) — nothing to do, the app itself is the source
+      // of truth for state going forward.
+      return;
+    }
+    // Either first real render, or a real render arriving late after we
+    // already fell back to local/demo state — apply the authoritative
+    // server state now.
+    seenRealRender=true;
+    mount(args.username, args.initial_state||null, false);
   });
+
   post(READY,{apiVersion:1});
+  LOG(`componentReady sent, waiting for streamlit:render`);
+
+  // Streamlit's host can attach its message listener slightly after this
+  // iframe's script finishes running (slow WebSocket/component-registry
+  // init on the host side), so the very first componentReady can be missed.
+  // Resend a few times — harmless if the host already handled the first one.
+  let readyAttempts=0;
+  readyTimer=setInterval(()=>{
+    if(started){clearInterval(readyTimer);return}
+    readyAttempts++;
+    post(READY,{apiVersion:1});
+    LOG(`componentReady resent (attempt ${readyAttempts})`);
+    if(readyAttempts>=12)clearInterval(readyTimer);
+  },500);
+
+  // Last-resort fallback: if streamlit:render never arrives at all (broken
+  // handshake, proxy/ad-blocker eating postMessage, etc.), still render the
+  // app from whatever is cached in localStorage (or the bundle's own demo
+  // state) instead of leaving the page permanently blank. If a genuine
+  // streamlit:render still arrives afterwards, the listener above will
+  // remount with the authoritative server state.
+  fallbackTimer=setTimeout(()=>{
+    if(started)return;
+    console.warn(`[MinimalistFlow] streamlit:render was not received within 6s — rendering local/demo state as a fallback so the page is not blank. This means the Streamlit host never completed the component handshake; check app.py's declare_component() call and inspect postMessage traffic between the parent app and this iframe.`);
+    mount(window.__MINIMALIST_USER__||``, null, true);
+  },6000);
 })();
 </script>
 </body>
