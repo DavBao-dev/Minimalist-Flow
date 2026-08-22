@@ -1,11 +1,18 @@
 import hmac
 import re
+import time
 from pathlib import Path
 
 import streamlit as st
 import streamlit.components.v1 as components
 
 import db
+
+# Frontend debounces state changes ~150ms before sending them back to Python
+# (see static/index.html), plus normal websocket round-trip. This grace
+# period on logout gives that pending sync a real chance to land in the DB
+# before we tear down the component and drop it on the floor.
+LOGOUT_SYNC_GRACE_SECONDS = 1.2
 
 st.set_page_config(
     page_title="Minimalist Flow",
@@ -102,9 +109,21 @@ def logout_button():
             st.caption("☁️ Progress: Turso")
         else:
             st.caption("💾 Progress: SQLite")
-        if st.button("Đăng xuất", use_container_width=True):
-            st.session_state["authenticated"] = False
-            st.session_state.pop("username", None)
+
+        last_saved = st.session_state.get("last_saved_at")
+        if last_saved:
+            st.caption(f"✅ Đã lưu lúc {last_saved}")
+
+        if st.session_state.get("logging_out"):
+            st.caption("⏳ Đang chờ đồng bộ dữ liệu trước khi đăng xuất…")
+            st.button("Đăng xuất", use_container_width=True, disabled=True)
+        elif st.button("Đăng xuất", use_container_width=True):
+            # Don't flip `authenticated` off immediately: the frontend may
+            # still have a debounced state change (e.g. a task you just
+            # deleted) in flight that hasn't reached db.save_user_state()
+            # yet. Keep the component mounted for one more pass so that
+            # pending sync can land, THEN actually log out.
+            st.session_state["logging_out"] = True
             st.rerun()
 
 
@@ -134,7 +153,11 @@ def render_app():
             # Avoid unnecessary writes/reruns when the component sends the same
             # snapshot again after a Streamlit rerun.
             if state != persisted:
-                db.save_user_state(username, state)
+                try:
+                    db.save_user_state(username, state)
+                    st.session_state["last_saved_at"] = time.strftime("%H:%M:%S")
+                except Exception as exc:  # noqa: BLE001 - surface, don't hide
+                    st.toast(f"⚠️ Không lưu được tiến trình: {exc}", icon="⚠️")
 
 
 if "authenticated" not in st.session_state:
@@ -144,4 +167,21 @@ if not st.session_state["authenticated"]:
     login_form()
 else:
     logout_button()
+    # Always render (and thus capture/save) any pending component value
+    # first, whether or not we're mid-logout.
     render_app()
+
+    if st.session_state.get("logging_out"):
+        # Give the frontend's debounced sync + websocket round-trip a real
+        # window to land. If a fresh component value arrives from the
+        # browser during this sleep, Streamlit will interrupt this run and
+        # start a new one — which re-enters this same `if logging_out`
+        # branch, calls render_app() again first (saving that fresh value),
+        # and only then waits out another grace period. So logout only
+        # actually completes once things have gone quiet.
+        time.sleep(LOGOUT_SYNC_GRACE_SECONDS)
+        st.session_state["authenticated"] = False
+        st.session_state.pop("username", None)
+        st.session_state.pop("logging_out", None)
+        st.session_state.pop("last_saved_at", None)
+        st.rerun()
